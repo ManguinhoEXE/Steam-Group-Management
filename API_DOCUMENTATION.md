@@ -163,40 +163,43 @@
 **Endpoint:** `POST /auth/upload-profile-image`  
 **Autenticación:** Requerida  
 **Content-Type:** `multipart/form-data`  
-**Descripción:** Sube o actualiza la imagen de perfil del usuario
+**Descripción:** Sube o actualiza la imagen de perfil del usuario en Cloudinary
 
 **Request Body (form-data):**
 - `file`: Archivo de imagen (JPG, PNG, WebP, GIF)
 
 **Validaciones:**
 - Tamaño máximo: 5 MB
-- Dimensiones máximas: 2000x2000 px
 - Formatos: JPG, JPEG, PNG, WebP, GIF
-- GIF animados se mantienen sin procesar
+
+**Procesamiento automático por Cloudinary:**
+- Redimensiona a 500x500px centrado en caras
+- Genera thumbnail de 200x200px
+- Genera avatar pequeño de 100x100px
+- Optimización de calidad automática
+- Conversión a WebP en navegadores compatibles
+- CDN global con caché
 
 **Response (200 OK):**
 ```json
 {
   "message": "Imagen de perfil actualizada exitosamente",
-  "profile_image": "uploads/profiles/1_abc12345.jpg",
+  "profile_image": "https://res.cloudinary.com/tu_cloud/image/upload/v1234567890/steam_group/profiles/user_1.jpg",
+  "url_thumbnail": "https://res.cloudinary.com/.../c_fill,h_200,w_200/user_1.jpg",
+  "url_small": "https://res.cloudinary.com/.../c_fill,h_100,w_100/user_1.jpg",
   "original_size": "2340.56 KB",
   "final_size": "456.78 KB",
-  "dimensions": "1920x1080",
-  "format": "JPG"
+  "dimensions": "500x500",
+  "format": "jpg"
 }
 ```
 
-**Response para GIF animado:**
-```json
-{
-  "message": "Imagen de perfil actualizada exitosamente",
-  "profile_image": "uploads/profiles/1_abc12345.gif",
-  "original_size": "1234.56 KB",
-  "final_size": "1234.56 KB",
-  "dimensions": "500x500",
-  "format": "GIF (animado)"
-}
-```
+**Uso de las URLs:**
+- `profile_image`: Imagen principal (500x500) - úsala en perfiles
+- `url_thumbnail`: Versión mediana (200x200) - úsala en listas
+- `url_small`: Versión pequeña (100x100) - úsala en avatares
+
+Todas las URLs son permanentes y servidas desde CDN global. Solo necesitas usar la URL directamente en tu `<img src="...">`, no requiere descarga ni procesamiento adicional.
 
 ---
 
@@ -212,6 +215,55 @@
   "message": "Imagen de perfil eliminada exitosamente"
 }
 ```
+
+---
+
+### 9. Obtener Todos los Usuarios
+
+**Endpoint:** `GET /auth/users`  
+**Autenticación:** Requerida  
+**Descripción:** Obtiene la lista de todos los usuarios con sus datos y balance
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": 1,
+    "name": "Usuario 1",
+    "role": "master",
+    "active": true,
+    "profile_image": "uploads/profiles/1_abc12345.jpg",
+    "created_at": "2025-01-01T00:00:00Z",
+    "updated_at": "2025-01-02T10:30:00Z",
+    "auth_uid": "uuid-string-here",
+    "balance": {
+      "total_deposits": 500000,
+      "total_expenses": 150000,
+      "current_balance": 350000
+    }
+  },
+  {
+    "id": 2,
+    "name": "Usuario 2",
+    "role": "steam",
+    "active": true,
+    "profile_image": null,
+    "created_at": "2025-01-01T00:00:00Z",
+    "updated_at": "2025-01-01T00:00:00Z",
+    "auth_uid": "uuid-string-here",
+    "balance": {
+      "total_deposits": 300000,
+      "total_expenses": 75000,
+      "current_balance": 225000
+    }
+  }
+]
+```
+
+**Nota:** El balance se calcula dinámicamente basado en:
+- `total_deposits`: Suma de todos los depósitos del usuario
+- `total_expenses`: Suma de todas las partes de compras del usuario
+- `current_balance`: total_deposits - total_expenses
 
 ---
 

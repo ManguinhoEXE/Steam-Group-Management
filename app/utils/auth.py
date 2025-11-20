@@ -99,10 +99,10 @@ async def get_token_from_cookie_or_header(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> str:
-    token = request.cookies.get(ACCESS_COOKIE_NAME)
+    if credentials and credentials.credentials:
+        return credentials.credentials
     
-    if not token and credentials:
-        token = credentials.credentials
+    token = request.cookies.get(ACCESS_COOKIE_NAME)
     
     if not token:
         raise HTTPException(

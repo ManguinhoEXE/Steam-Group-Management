@@ -140,6 +140,7 @@ class Purchase(PurchaseBase):
     id: int
     proposal_id: Optional[int] = None
     purchaser_id: Optional[int] = None
+    owner_id: Optional[int] = None
     purchased_at: datetime
     
     class Config:
