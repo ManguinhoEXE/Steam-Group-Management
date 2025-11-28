@@ -1,4 +1,7 @@
+
+
 from pydantic import BaseModel, EmailStr, Field, validator, field_serializer
+from pydantic import ConfigDict
 from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
@@ -27,9 +30,9 @@ class SteamUser(SteamUserBase):
     @field_serializer('auth_uid')
     def serialize_uuid(self, value: Optional[UUID], _info) -> Optional[str]:
         return str(value) if value else None
-    
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+
 
 class MonthlyCollectionBase(BaseModel):
     due_date: date
@@ -42,8 +45,7 @@ class MonthlyCollection(MonthlyCollectionBase):
     id: int
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MonthlyCollectionItemBase(BaseModel):
     amount: Decimal = Field(..., gt=0)
@@ -64,8 +66,10 @@ class MonthlyCollectionItem(MonthlyCollectionItemBase):
     paid_at: Optional[datetime] = None
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+
+
 
 class DepositBase(BaseModel):
     amount: Decimal = Field(..., gt=0)
@@ -81,8 +85,8 @@ class Deposit(DepositBase):
     date: datetime
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
 
 class GameProposalBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
@@ -102,8 +106,12 @@ class GameProposal(GameProposalBase):
     proposal_number: Optional[int] = None
     month_year: Optional[int] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+class GameProposalWithVotes(GameProposal):
+    votes_count: int
+
+    model_config = ConfigDict(from_attributes=True)
 
 class VoteBase(BaseModel):
     vote: bool = True
@@ -117,8 +125,7 @@ class Vote(VoteBase):
     member_id: int
     voted_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class PurchaseBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
@@ -140,10 +147,10 @@ class Purchase(PurchaseBase):
     id: int
     proposal_id: Optional[int] = None
     purchaser_id: Optional[int] = None
+    owner_id: Optional[int] = None
     purchased_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class PurchaseShareBase(BaseModel):
     share_amount: Decimal = Field(..., gt=0)
@@ -164,8 +171,7 @@ class PurchaseShare(PurchaseShareBase):
     paid_at: Optional[datetime] = None
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class AdjustmentBase(BaseModel):
     amount: Decimal
@@ -179,8 +185,7 @@ class Adjustment(AdjustmentBase):
     member_id: int
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class SettingBase(BaseModel):
     value: Optional[dict] = None
@@ -194,9 +199,7 @@ class SettingUpdate(SettingBase):
 class Setting(SettingBase):
     key: str
     updated_at: datetime
-    
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class AuditLogCreate(BaseModel):
     actor_member_id: Optional[int] = None
@@ -206,9 +209,7 @@ class AuditLogCreate(BaseModel):
 class AuditLog(AuditLogCreate):
     id: int
     created_at: datetime
-    
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MemberBalance(BaseModel):
     member_id: int

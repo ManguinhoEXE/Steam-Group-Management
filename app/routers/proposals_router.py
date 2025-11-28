@@ -8,10 +8,36 @@ from app.database import get_db
 from app.models import SteamUser, GameProposal, Vote
 from app.utils.auth import get_current_active_user, require_master_role
 from app.schemas import schemas
+from app.models.models import ProposalsTurn
 
 router = APIRouter(prefix="/proposals", tags=["Game Proposals"])
 
 SYSTEM_START_DATE = datetime(2025, 1, 1)
+
+
+# Endpoint para alternar el booleano de proposals_turn (solo master)
+@router.post("/toggle-propuestas-turn", response_model=dict)
+async def toggle_proposals_turn_status(db: Session = Depends(get_db), current_user: SteamUser = Depends(require_master_role)):
+    row = db.query(ProposalsTurn).first()
+    if not row:
+        row = ProposalsTurn(status=True)
+        db.add(row)
+    else:
+        row.status = not row.status
+    db.commit()
+    db.refresh(row)
+    return {"status": row.status}
+
+# Endpoint para consultar el valor de status en proposals_turn (cualquier usuario autenticado)
+@router.get("/turn-status", response_model=dict)
+async def get_proposals_turn_status(
+    db: Session = Depends(get_db),
+    current_user: SteamUser = Depends(get_current_active_user)
+):
+    row = db.query(ProposalsTurn).first()
+    if not row:
+        return {"status": None, "message": "No existe registro en proposals_turn"}
+    return {"status": row.status}
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_proposal(
@@ -78,20 +104,31 @@ async def create_proposal(
         }
     }
 
-@router.get("/", response_model=List[schemas.GameProposal])
+@router.get("/", response_model=List[schemas.GameProposalWithVotes])
 async def get_all_proposals(
     status_filter: str = None,
     db: Session = Depends(get_db),
     current_user: SteamUser = Depends(get_current_active_user)
 ):
-    
     query = db.query(GameProposal)
-    
     if status_filter:
         query = query.filter(GameProposal.status == status_filter)
-    
     proposals = query.order_by(GameProposal.proposed_at.desc()).all()
-    return proposals
+    proposal_ids = [p.id for p in proposals]
+    # Subquery para contar votos por propuesta
+    votes_counts = dict(
+        db.query(Vote.proposal_id, func.count(Vote.id))
+        .filter(Vote.proposal_id.in_(proposal_ids))
+        .group_by(Vote.proposal_id)
+        .all()
+    ) if proposal_ids else {}
+    result = []
+    for proposal in proposals:
+        votes_count = votes_counts.get(proposal.id, 0)
+        base_data = schemas.GameProposal.model_validate(proposal).model_dump()
+        proposal_data = schemas.GameProposalWithVotes(**base_data, votes_count=votes_count)
+        result.append(proposal_data)
+    return result
 
 @router.get("/my-vote")
 async def get_my_current_vote(
@@ -143,15 +180,11 @@ async def get_proposal_with_votes(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Propuesta con ID {proposal_id} no encontrada"
         )
-    
 
-    total_votes = db.query(Vote).filter(Vote.proposal_id == proposal_id).count()
-    
-
+    # Obtener todos los votos y usuarios en un solo query
     votes_detail = db.query(Vote, SteamUser).join(
         SteamUser, Vote.member_id == SteamUser.id
     ).filter(Vote.proposal_id == proposal_id).all()
-    
     votes_list = [
         {
             "member_id": vote.member_id,
@@ -160,13 +193,13 @@ async def get_proposal_with_votes(
         }
         for vote, user in votes_detail
     ]
-    
+    total_votes = len(votes_list)
 
     total_users = db.query(SteamUser).filter(
         SteamUser.active == True,
         SteamUser.id != proposal.proposer_id
     ).count()
-    
+
     return {
         "proposal": {
             "id": proposal.id,
@@ -337,30 +370,34 @@ async def select_winner(
     
 
     winner_votes = db.query(Vote).filter(Vote.proposal_id == proposal_id).count()
-    
 
     winner_proposal.status = 'voted'
-    
 
     rejected_proposals = db.query(GameProposal).filter(
         GameProposal.status == 'proposed',
         GameProposal.id != proposal_id
     ).all()
-    
-    rejected_count = 0
+    rejected_ids = [prop.id for prop in rejected_proposals]
+    # Obtener votos de todas las rechazadas en una sola query
+    votes_by_proposal = dict(
+        db.query(Vote.proposal_id, func.count(Vote.id))
+        .filter(Vote.proposal_id.in_(rejected_ids))
+        .group_by(Vote.proposal_id)
+        .all()
+    ) if rejected_ids else {}
+    rejected_count = len(rejected_proposals)
     rejected_list = []
     for prop in rejected_proposals:
         prop.status = 'rejected'
-        rejected_count += 1
-        votes_count = db.query(Vote).filter(Vote.proposal_id == prop.id).count()
+        votes_count = votes_by_proposal.get(prop.id, 0)
         rejected_list.append({
             "id": prop.id,
             "title": prop.title,
             "votes": votes_count
         })
-    
+
     db.commit()
-    
+
     return {
         "message": "Ganador seleccionado exitosamente",
         "winner": {

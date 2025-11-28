@@ -3,9 +3,54 @@
 **Base URL:** `http://localhost:8000`  
 **Versión:** 1.0.0
 
----
 
 ## 📑 Tabla de Contenidos
+
+---
+
+### 8.1. Solicitar Recuperación de Contraseña
+
+**Endpoint:** `POST /auth/password-reset-request`  
+**Autenticación:** No requerida  
+**Descripción:** Envía un email de recuperación de contraseña al usuario. El email contiene un enlace para restablecer la contraseña (enviado por Supabase).
+
+**Request Body:**
+```json
+{
+  "email": "usuario@ejemplo.com"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "Si el email está registrado, se ha enviado un correo de recuperación"
+}
+```
+
+**Notas:**
+- Por seguridad, la respuesta es la misma aunque el email no exista.
+- El email contiene un enlace generado por Supabase para restablecer la contraseña.
+
+---
+
+### 8.2. Confirmar Recuperación de Contraseña (Frontend)
+
+**Importante:** El cambio de contraseña tras recibir el email de recuperación debe hacerse en el frontend usando el SDK de Supabase JS.
+
+**Flujo recomendado:**
+1. El usuario solicita recuperación ingresando su email en el frontend.
+2. El backend llama a `/auth/password-reset-request` y, si el email existe, Supabase envía un correo con el enlace de recuperación.
+3. El usuario abre el enlace del email, que contiene un token temporal y es redirigido a tu frontend.
+4. El frontend detecta el token y usa el SDK de Supabase JS para cambiar la contraseña:
+   ```js
+   // Ejemplo en React/JS
+   import { supabase } from './supabaseClient';
+   await supabase.auth.updateUser({ password: 'nuevaPassword123' });
+   ```
+5. Si es exitoso, el usuario puede iniciar sesión con la nueva contraseña.
+
+**Nota:** El backend solo expone `/auth/password-reset-request`. El cambio de contraseña NO se realiza vía backend, sino directamente en el frontend con el SDK JS de Supabase.
 
 1. [Autenticación](#autenticación)
 2. [Depósitos](#depósitos)
@@ -163,40 +208,43 @@
 **Endpoint:** `POST /auth/upload-profile-image`  
 **Autenticación:** Requerida  
 **Content-Type:** `multipart/form-data`  
-**Descripción:** Sube o actualiza la imagen de perfil del usuario
+**Descripción:** Sube o actualiza la imagen de perfil del usuario en Cloudinary
 
 **Request Body (form-data):**
 - `file`: Archivo de imagen (JPG, PNG, WebP, GIF)
 
 **Validaciones:**
 - Tamaño máximo: 5 MB
-- Dimensiones máximas: 2000x2000 px
 - Formatos: JPG, JPEG, PNG, WebP, GIF
-- GIF animados se mantienen sin procesar
+
+**Procesamiento automático por Cloudinary:**
+- Redimensiona a 500x500px centrado en caras
+- Genera thumbnail de 200x200px
+- Genera avatar pequeño de 100x100px
+- Optimización de calidad automática
+- Conversión a WebP en navegadores compatibles
+- CDN global con caché
 
 **Response (200 OK):**
 ```json
 {
   "message": "Imagen de perfil actualizada exitosamente",
-  "profile_image": "uploads/profiles/1_abc12345.jpg",
+  "profile_image": "https://res.cloudinary.com/tu_cloud/image/upload/v1234567890/steam_group/profiles/user_1.jpg",
+  "url_thumbnail": "https://res.cloudinary.com/.../c_fill,h_200,w_200/user_1.jpg",
+  "url_small": "https://res.cloudinary.com/.../c_fill,h_100,w_100/user_1.jpg",
   "original_size": "2340.56 KB",
   "final_size": "456.78 KB",
-  "dimensions": "1920x1080",
-  "format": "JPG"
+  "dimensions": "500x500",
+  "format": "jpg"
 }
 ```
 
-**Response para GIF animado:**
-```json
-{
-  "message": "Imagen de perfil actualizada exitosamente",
-  "profile_image": "uploads/profiles/1_abc12345.gif",
-  "original_size": "1234.56 KB",
-  "final_size": "1234.56 KB",
-  "dimensions": "500x500",
-  "format": "GIF (animado)"
-}
-```
+**Uso de las URLs:**
+- `profile_image`: Imagen principal (500x500) - úsala en perfiles
+- `url_thumbnail`: Versión mediana (200x200) - úsala en listas
+- `url_small`: Versión pequeña (100x100) - úsala en avatares
+
+Todas las URLs son permanentes y servidas desde CDN global. Solo necesitas usar la URL directamente en tu `<img src="...">`, no requiere descarga ni procesamiento adicional.
 
 ---
 
@@ -212,6 +260,55 @@
   "message": "Imagen de perfil eliminada exitosamente"
 }
 ```
+
+---
+
+### 9. Obtener Todos los Usuarios
+
+**Endpoint:** `GET /auth/users`  
+**Autenticación:** Requerida (Todos los usuarios)  
+**Descripción:** Obtiene la lista de todos los usuarios con sus datos y balance
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": 1,
+    "name": "Usuario 1",
+    "role": "master",
+    "active": true,
+    "profile_image": "uploads/profiles/1_abc12345.jpg",
+    "created_at": "2025-01-01T00:00:00Z",
+    "updated_at": "2025-01-02T10:30:00Z",
+    "auth_uid": "uuid-string-here",
+    "balance": {
+      "total_deposits": 500000,
+      "total_expenses": 150000,
+      "current_balance": 350000
+    }
+  },
+  {
+    "id": 2,
+    "name": "Usuario 2",
+    "role": "steam",
+    "active": true,
+    "profile_image": null,
+    "created_at": "2025-01-01T00:00:00Z",
+    "updated_at": "2025-01-01T00:00:00Z",
+    "auth_uid": "uuid-string-here",
+    "balance": {
+      "total_deposits": 300000,
+      "total_expenses": 75000,
+      "current_balance": 225000
+    }
+  }
+]
+```
+
+**Nota:** El balance se calcula dinámicamente basado en:
+- `total_deposits`: Suma de todos los depósitos del usuario
+- `total_expenses`: Suma de todas las partes de compras del usuario
+- `current_balance`: total_deposits - total_expenses
 
 ---
 
@@ -284,7 +381,7 @@
 ### 3. Ver Todos los Depósitos
 
 **Endpoint:** `GET /deposits/`  
-**Autenticación:** Requerida (Solo Master)  
+**Autenticación:** Requerida (Todos los usuarios)  
 **Descripción:** Obtiene todos los depósitos del sistema
 
 **Response (200 OK):**
@@ -410,7 +507,7 @@
 
 **Endpoint:** `GET /proposals/`  
 **Autenticación:** No requerida  
-**Descripción:** Obtiene todas las propuestas con conteo de votos
+**Descripción:** Obtiene todas las propuestas con todos sus datos y el campo adicional `votes_count` (cantidad de votos recibidos)
 
 **Response (200 OK):**
 ```json
@@ -717,7 +814,7 @@
 ### 3. Ver Todas las Compras
 
 **Endpoint:** `GET /purchases/`  
-**Autenticación:** Requerida  
+**Autenticación:** Requerida (Todos los usuarios)  
 **Descripción:** Obtiene todas las compras del sistema
 
 **Response (200 OK):**

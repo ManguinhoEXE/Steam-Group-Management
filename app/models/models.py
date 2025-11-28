@@ -4,6 +4,13 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
 
+# Modelo para proposals_turn
+class ProposalsTurn(Base):
+    __tablename__ = 'proposals_turn'
+    __table_args__ = {'schema': 'public'}
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    status = Column(Boolean, nullable=False, default=True)
+
 class SteamUser(Base):
     __tablename__ = 'steamuser'
     __table_args__ = {'schema': 'public'}
@@ -19,7 +26,7 @@ class SteamUser(Base):
     deposits = relationship('Deposit', back_populates='member')
     proposals = relationship('GameProposal', back_populates='proposer')
     votes = relationship('Vote', back_populates='member')
-    purchases = relationship('Purchase', back_populates='purchaser')
+    purchases = relationship('Purchase', back_populates='purchaser', foreign_keys='Purchase.purchaser_id')
     purchase_shares = relationship('PurchaseShare', back_populates='member')
     adjustments = relationship('Adjustment', back_populates='member')
     audit_logs = relationship('AuditLog', back_populates='actor_member')
@@ -91,11 +98,13 @@ class Purchase(Base):
     title = Column(Text, nullable=False)
     total_price = Column(Integer, nullable=False)
     purchaser_id = Column(BigInteger, ForeignKey('public.steamuser.id'), nullable=False)
+    owner_id = Column(BigInteger, ForeignKey('public.steamuser.id'), nullable=False)
     purchased_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     was_on_sale = Column(Boolean, nullable=False, default=False)
     original_price = Column(Integer, nullable=True)
     proposal = relationship('GameProposal', back_populates='purchases')
-    purchaser = relationship('SteamUser', back_populates='purchases')
+    purchaser = relationship('SteamUser', back_populates='purchases', foreign_keys=[purchaser_id])
+    owner = relationship('SteamUser', foreign_keys=[owner_id])
     shares = relationship('PurchaseShare', back_populates='purchase', cascade='all, delete-orphan')
 
 class PurchaseShare(Base):

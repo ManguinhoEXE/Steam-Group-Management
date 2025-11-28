@@ -118,6 +118,7 @@ async def create_purchase_from_proposal(
         title=proposal.title,
         total_price=final_price,
         purchaser_id=current_user.id,
+        owner_id=proposer.id,
         was_on_sale=was_on_sale,
         original_price=original_price_value
     )
@@ -290,6 +291,7 @@ async def create_manual_purchase(
         title=purchase_data.title,
         total_price=total_price,
         purchaser_id=current_user.id,
+        owner_id=owner.id,
         was_on_sale=purchase_data.was_on_sale,
         original_price=purchase_data.original_price
     )
@@ -352,6 +354,8 @@ async def create_manual_purchase(
             "original_price": new_purchase.original_price,
             "purchaser_id": new_purchase.purchaser_id,
             "purchaser_name": current_user.name,
+            "owner_id": owner.id,
+            "owner_name": owner.name,
             "purchased_at": new_purchase.purchased_at
         },
         "shares_breakdown": {
@@ -394,7 +398,7 @@ async def get_purchase_with_shares(
     shares = db.query(PurchaseShare, SteamUser).join(
         SteamUser, PurchaseShare.member_id == SteamUser.id
     ).filter(PurchaseShare.purchase_id == purchase_id).all()
-    
+
     shares_list = [
         {
             "share_id": share.id,
@@ -406,13 +410,16 @@ async def get_purchase_with_shares(
         }
         for share, user in shares
     ]
-    
 
-    total_paid = sum(s.share_amount for s, u in shares if s.paid)
-    total_pending = sum(s.share_amount for s, u in shares if not s.paid)
-    users_paid = sum(1 for s, u in shares if s.paid)
-    users_pending = sum(1 for s, u in shares if not s.paid)
-    
+    # Agregación SQL para totales y conteos
+    agg = db.query(
+        func.coalesce(func.sum(PurchaseShare.share_amount).filter(PurchaseShare.paid == True), 0),
+        func.coalesce(func.sum(PurchaseShare.share_amount).filter(PurchaseShare.paid == False), 0),
+        func.count().filter(PurchaseShare.paid == True),
+        func.count().filter(PurchaseShare.paid == False)
+    ).filter(PurchaseShare.purchase_id == purchase_id).one()
+    total_paid, total_pending, users_paid, users_pending = agg
+
     return {
         "purchase": {
             "id": purchase.id,
@@ -421,6 +428,7 @@ async def get_purchase_with_shares(
             "was_on_sale": purchase.was_on_sale,
             "original_price": purchase.original_price,
             "purchaser_id": purchase.purchaser_id,
+            "owner_id": purchase.owner_id,
             "purchased_at": purchase.purchased_at
         },
         "shares": shares_list,
@@ -430,7 +438,7 @@ async def get_purchase_with_shares(
             "total_pending": total_pending,
             "users_paid": users_paid,
             "users_pending": users_pending,
-            "completion_rate": f"{(users_paid / len(shares) * 100):.1f}%" if shares else "0%"
+            "completion_rate": f"{(users_paid / (users_paid + users_pending) * 100):.1f}%" if (users_paid + users_pending) > 0 else "0%"
         }
     }
 

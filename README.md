@@ -1,6 +1,10 @@
 # 🎮 Steam Group - Sistema de Compras Compartidas
 
-API REST para gestionar compras compartidas de juegos de Steam entre un grupo de 6 personas, construida con FastAPI y PostgreSQL (Supabase).
+API REST para gestionar compras compartidas de juegos de Steam entre un grupo de 6 personas, construida con FastAPI, PostgreSQL (Supabase) y almacenamiento de imágenes en Cloudinary.
+
+## 🌐 Despliegue
+
+La API está desplegada en [Render](https://render.com/).
 
 ## 🚀 Características
 
@@ -11,6 +15,7 @@ API REST para gestionar compras compartidas de juegos de Steam entre un grupo de
 - ✅ Compras compartidas con split 40/60
 - ✅ Control absoluto del Master
 - ✅ Base de datos PostgreSQL (Supabase)
+- ✅ Almacenamiento de imágenes de perfil en Cloudinary
 - ✅ Documentación automática (Swagger/ReDoc)
 
 ## 📋 Requisitos
@@ -28,34 +33,80 @@ git clone <tu-repo>
 cd Steam
 ```
 
-### 2. Crear entorno virtual
-
-```bash
-python -m venv venv
-
-# Activar en Windows
-.\venv\Scripts\activate
-
-# Activar en Linux/Mac
-source venv/bin/activate
-```
-
-### 3. Instalar dependencias
+### 2. Instalar dependencias
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configurar variables de entorno
+### 3. Configurar variables de entorno
 
-Edita `.env` con tu información de Supabase:
+
+Edita `.env` con tu información de Supabase, JWT y Cloudinary (ejemplo):
 
 ```env
-DATABASE_URL=postgresql://postgres.xxxxx:password@aws-0-us-east-1.pooler.supabase.com:5432/postgres
-SUPABASE_URL=https://xxxxx.supabase.co
+# Base de datos Supabase
+DATABASE_URL=postgresql://usuario:contraseña@host:puerto/db
+
+# Supabase Auth
+SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_KEY=tu_supabase_anon_key
-JWT_SECRET_KEY=tu_secret_key_aqui
+SUPABASE_SERVICE_ROLE_KEY=tu_supabase_service_role_key
+
+# JWT
+JWT_SECRET_KEY=tu_clave_secreta
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+# Cookies
+COOKIE_DOMAIN=localhost
+COOKIE_SECURE=false
+COOKIE_SAMESITE=lax
+
+# Cloudinary
+CLOUDINARY_CLOUD_NAME=tu_cloud_name
+CLOUDINARY_API_KEY=tu_api_key
+CLOUDINARY_API_SECRET=tu_api_secret
+CLOUDINARY_URL=cloudinary://tu_api_key:tu_api_secret@tu_cloud_name
 ```
+## 🖼️ Gestión de imágenes de perfil con Cloudinary
+
+- Las imágenes de perfil se suben a Cloudinary mediante el endpoint `/auth/upload-profile-image`.
+- Al subir una imagen:
+  - Se almacena la URL de la imagen principal (500x500) en el campo `profile_image` del usuario en la base de datos.
+  - Cloudinary genera automáticamente versiones optimizadas:
+    - `profile_image`: 500x500 (principal)
+    - `url_thumbnail`: 200x200 (listas)
+    - `url_small`: 100x100 (avatar)
+- Todas las URLs son públicas, permanentes y servidas por CDN global.
+- Al eliminar la imagen de perfil, también se elimina de Cloudinary y se borra la referencia en la base de datos.
+
+**Impacto:**  
+No se almacena la imagen en el servidor ni en la base de datos, solo la URL segura proporcionada por Cloudinary.
+
+---
+
+## 🔐 Recuperación de contraseña
+
+1. El usuario solicita recuperación con su email vía `/auth/password-reset-request`.
+2. El backend usa Supabase para enviar un correo con un enlace de reseteo.
+3. El usuario sigue el enlace y cambia la contraseña desde el frontend (usando el SDK de Supabase).
+4. No se expone endpoint para cambiar la contraseña directamente desde el backend.
+
+---
+
+## 🧪 Pruebas automatizadas
+
+- El proyecto incluye pruebas automatizadas con **pytest**.
+- Las pruebas cubren los principales flujos de la API: registro, login, depósitos, propuestas, votaciones, compras, etc.
+- Se ejecutan con:
+  ```bash
+  python -m pytest tests/
+  ```
+- Permiten validar que la API funciona correctamente y que los endpoints cumplen las reglas de negocio.
+
+---
 
 ## 🎮 Ejecutar la aplicación
 
@@ -78,8 +129,6 @@ FastAPI genera documentación automática e interactiva:
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
----
-
 ## 🎯 SISTEMA DE USUARIOS Y ROLES
 
 ### Estructura del grupo (6 personas):
@@ -89,15 +138,9 @@ FastAPI genera documentación automática e interactiva:
 ### 👑 Privilegios del Master
 
 **PUEDE hacer:**
-- ✅ Proponer juegos (como cualquier usuario)
-- ✅ Seleccionar ganador manualmente (sin importar votos)
 - ✅ Crear depósitos para usuarios
 - ✅ Comprar juegos aprobados
 - ✅ Ver saldos y estadísticas de todos
-
-**NO PUEDE hacer:**
-- ❌ Votar en propuestas (solo decide el ganador)
-
 ---
 
 ## 🛠️ ENDPOINTS PRINCIPALES
@@ -197,7 +240,6 @@ Authorization: Bearer <token>
 ```
 
 **Reglas de votación:**
-- ❌ Master NO puede votar
 - ❌ No puedes votar tu propia propuesta
 - ✅ Solo UN voto activo a la vez
 - ✅ Si votas otra propuesta, se elimina automáticamente tu voto anterior
@@ -417,25 +459,89 @@ Steam/
 
 ---
 
-## �️ MODELOS DE BASE DE DATOS
+## 🗄️ MODELO DE BASE DE DATOS
 
-### User
-- `id`, `email`, `username`, `password_hash`, `is_master`, `balance`, `supabase_id`
+El sistema utiliza PostgreSQL (Supabase) y está compuesto por las siguientes tablas principales:
 
-### Deposit
-- `id`, `user_id`, `amount`, `created_at`
+### steamuser
+| Campo         | Tipo        | Descripción                       |
+|-------------- |------------ |-----------------------------------|
+| id            | int8        | Identificador único                |
+| name          | text        | Nombre de usuario                  |
+| created_at    | timestamptz | Fecha de creación                  |
+| updated_at    | timestamptz | Fecha de última actualización      |
+| role          | text        | Rol (master/user)                  |
+| auth_uid      | uuid        | UID de autenticación Supabase      |
+| active        | bool        | Usuario activo/inactivo            |
+| profile_image | text        | URL de imagen de perfil (Cloudinary)|
 
-### GameProposal
-- `id`, `user_id`, `title`, `price`, `status` (proposed/approved/rejected), `created_at`
+### game_proposals
+| Campo           | Tipo        | Descripción                       |
+|---------------- |------------ |-----------------------------------|
+| id              | int8        | Identificador único                |
+| title           | text        | Título de la propuesta             |
+| proposer_id     | int8        | ID del usuario que propone         |
+| price           | int4        | Precio propuesto                   |
+| proposed_at     | timestamptz | Fecha de propuesta                 |
+| status          | text        | Estado de la propuesta             |
+| proposal_number | int4        | Número de propuesta                |
+| month_year      | int4        | Mes y año de la propuesta          |
 
-### Vote
-- `id`, `user_id`, `proposal_id`, `created_at`
+### purchases
+| Campo         | Tipo        | Descripción                       |
+|-------------- |------------ |-----------------------------------|
+| id            | int8        | Identificador único                |
+| proposal_id   | int8        | ID de la propuesta asociada        |
+| title         | text        | Título del juego comprado          |
+| total_price   | int4        | Precio total de la compra          |
+| purchaser_id  | int8        | ID del usuario que realiza la compra|
+| purchased_at  | timestamptz | Fecha de compra                    |
+| was_on_sale   | bool        | ¿Estaba en oferta?                 |
+| original_price| int4        | Precio original (sin descuento)    |
+| owner_id      | int8        | ID del usuario propietario         |
 
-### Purchase
-- `id`, `title`, `total_price`, `owner_id`, `proposal_id`, `was_on_sale`, `original_price`, `created_at`
+### deposits
+| Campo      | Tipo        | Descripción                       |
+|----------- |------------ |-----------------------------------|
+| id         | int8        | Identificador único                |
+| member_id  | int8        | ID del usuario                     |
+| amount     | int4        | Monto del depósito                 |
+| note       | text        | Nota adicional                     |
+| date       | timestamptz | Fecha del depósito                 |
+| created_at | timestamptz | Fecha de registro                  |
 
-### PurchaseShare
-- `id`, `purchase_id`, `user_id`, `share_amount`, `created_at`
+### purchase_shares
+| Campo        | Tipo        | Descripción                       |
+|------------- |------------ |-----------------------------------|
+| id           | int8        | Identificador único                |
+| purchase_id  | int8        | ID de la compra asociada           |
+| member_id    | int8        | ID del usuario                     |
+| share_amount | int4        | Monto de la participación          |
+| paid         | bool        | ¿Pagado?                           |
+| paid_at      | timestamptz | Fecha de pago                      |
+| created_at   | timestamptz | Fecha de registro                  |
+
+### votes
+| Campo       | Tipo        | Descripción                       |
+|------------ |------------ |-----------------------------------|
+| id          | int8        | Identificador único                |
+| proposal_id | int8        | ID de la propuesta                 |
+| member_id   | int8        | ID del usuario                     |
+| vote        | bool        | Voto (aprobado/rechazado)          |
+| voted_at    | timestamptz | Fecha del voto                     |
+
+### proposals_turn
+| Campo  | Tipo | Descripción                |
+|--------|------|----------------------------|
+| id     | int8 | Identificador único        |
+| status | bool | Estado del turno de propuestas |
+
+#### Relaciones principales
+- **steamuser** se relaciona con depósitos, propuestas, compras, votos y participaciones.
+- **game_proposals** puede ser votada y convertirse en una compra.
+- **purchases** se divide entre usuarios mediante **purchase_shares**.
+- **votes** vincula usuarios y propuestas.
+- **deposits** registra los movimientos de saldo de cada usuario.
 
 ---
 
@@ -546,8 +652,8 @@ curl -X POST "http://localhost:8000/proposals/" \
 - [x] Sistema de compras compartidas 40/60
 - [x] Control de Master
 - [x] Registro de ofertas en compras
-- [ ] Dashboard de estadísticas
-- [ ] Historial de transacciones
+- [x] Dashboard de estadísticas
+- [x] Historial de transacciones
 - [ ] Sistema de notificaciones
 - [ ] Tests unitarios
 - [ ] Dockerizar aplicación
@@ -560,14 +666,6 @@ curl -X POST "http://localhost:8000/proposals/" \
 - [Documentación SQLAlchemy](https://docs.sqlalchemy.org/)
 - [Documentación Supabase](https://supabase.com/docs)
 - [Pydantic](https://docs.pydantic.dev/)
-
----
-
-## 📝 Licencia
-
-MIT
-
----
 
 ## 👤 Autor
 

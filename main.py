@@ -21,8 +21,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",
-        "https://*.onrender.com",
-        "*"
+        "https://steam-group-management.onrender.com",
+        "https://grupomuertodesteam.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],

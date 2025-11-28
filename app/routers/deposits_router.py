@@ -77,7 +77,7 @@ async def get_user_deposits(
 @router.get("/", response_model=List[schemas.Deposit])
 async def get_all_deposits(
     db: Session = Depends(get_db),
-    current_user: SteamUser = Depends(require_master_role)
+    current_user: SteamUser = Depends(get_current_active_user)
 ):
     deposits = db.query(Deposit).order_by(Deposit.date.desc()).all()
     return deposits
@@ -127,34 +127,41 @@ async def get_all_balances(
     
 
     users = db.query(SteamUser).filter(SteamUser.active == True).all()
-    
+    user_ids = [u.id for u in users]
+
+    # Subquery para depósitos
+    deposits_sum = dict(
+        db.query(Deposit.member_id, func.coalesce(func.sum(Deposit.amount), 0))
+        .filter(Deposit.member_id.in_(user_ids))
+        .group_by(Deposit.member_id)
+        .all()
+    )
+
+    # Subquery para gastos pagados
+    expenses_sum = dict(
+        db.query(PurchaseShare.member_id, func.coalesce(func.sum(PurchaseShare.share_amount), 0))
+        .filter(PurchaseShare.member_id.in_(user_ids), PurchaseShare.paid == True)
+        .group_by(PurchaseShare.member_id)
+        .all()
+    )
+
     balances = []
     for user in users:
-
-        total_deposits = db.query(func.sum(Deposit.amount)).filter(
-            Deposit.member_id == user.id
-        ).scalar() or 0
-        
-        total_expenses = db.query(func.sum(PurchaseShare.share_amount)).filter(
-            PurchaseShare.member_id == user.id,
-            PurchaseShare.paid == True
-        ).scalar() or 0
-        
-        current_balance = int(total_deposits) - int(total_expenses)
-        
+        total_deposits = int(deposits_sum.get(user.id, 0))
+        total_expenses = int(expenses_sum.get(user.id, 0))
+        current_balance = total_deposits - total_expenses
         balances.append({
             "user_id": user.id,
             "user_name": user.name,
             "profile_image": user.profile_image,
             "role": user.role,
-            "total_deposits": int(total_deposits),
-            "total_expenses": int(total_expenses),
+            "total_deposits": total_deposits,
+            "total_expenses": total_expenses,
             "current_balance": current_balance
         })
-    
 
     balances.sort(key=lambda x: x["current_balance"], reverse=True)
-    
+
     return {
         "balances": balances,
         "total_users": len(balances),
